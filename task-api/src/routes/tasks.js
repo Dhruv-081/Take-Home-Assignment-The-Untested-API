@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const taskService = require('../services/taskService');
-const { validateCreateTask, validateUpdateTask } = require('../utils/validators');
+const { validateCreateTask, validateUpdateTask, validateAssignee } = require('../utils/validators');
 
 router.get('/stats', (req, res) => {
   const stats = taskService.getStats();
@@ -12,19 +12,19 @@ router.get('/', (req, res) => {
   const { status, page, limit } = req.query;
 
   if (status) {
-    const tasks = taskService.getByStatus(status);
-    return res.json(tasks);
+    return res.json(taskService.getByStatus(status));
   }
 
   if (page !== undefined || limit !== undefined) {
-    const pageNum = parseInt(page) || 1;
-    const limitNum = parseInt(limit) || 10;
-    const tasks = taskService.getPaginated(pageNum, limitNum);
-    return res.json(tasks);
+    const pageNum = page === undefined ? 1 : Number(page);
+    const limitNum = limit === undefined ? 10 : Number(limit);
+    if (!Number.isInteger(pageNum) || !Number.isInteger(limitNum) || pageNum < 1 || limitNum < 1) {
+      return res.status(400).json({ error: 'page and limit must be positive integers' });
+    }
+    return res.json(taskService.getPaginated(pageNum, limitNum));
   }
 
-  const tasks = taskService.getAll();
-  res.json(tasks);
+  return res.json(taskService.getAll());
 });
 
 router.post('/', (req, res) => {
@@ -43,7 +43,9 @@ router.put('/:id', (req, res) => {
     return res.status(400).json({ error });
   }
 
-  const task = taskService.update(req.params.id, req.body);
+  const allowedFields = ['title', 'description', 'status', 'priority', 'dueDate'];
+  const fields = Object.fromEntries(Object.entries(req.body).filter(([key]) => allowedFields.includes(key)));
+  const task = taskService.update(req.params.id, fields);
   if (!task) {
     return res.status(404).json({ error: 'Task not found' });
   }
@@ -65,6 +67,16 @@ router.patch('/:id/complete', (req, res) => {
   if (!task) {
     return res.status(404).json({ error: 'Task not found' });
   }
+
+  res.json(task);
+});
+
+router.patch('/:id/assign', (req, res) => {
+  const error = validateAssignee(req.body);
+  if (error) return res.status(400).json({ error });
+
+  const task = taskService.assignTask(req.params.id, req.body.assignee.trim());
+  if (!task) return res.status(404).json({ error: 'Task not found' });
 
   res.json(task);
 });
